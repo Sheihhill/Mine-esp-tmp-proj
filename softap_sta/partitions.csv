@@ -1,0 +1,15 @@
+# ESP32 4MB Flash —— OTA 双分区表（自定义）
+# 布局（app 分区偏移必须 64KB=0x10000 对齐）：
+#   nvs      0x009000    24KB  WiFi/NVS 数据
+#   otadata  0x00F000     8KB  OTA 状态（当前从哪个槽启动、是否待验证）
+#   phy_init 0x011000     4KB  RF 校准数据
+#   ota_0    0x020000  1984KB  应用槽 0（首次烧录的固件放这里）
+#   ota_1    0x210000  1984KB  应用槽 1（OTA 升级包写到这里）
+#   结束于 0x400000，恰好用满 4MB
+# 注意：注释必须单独一行以 # 开头；行尾禁止写说明文字（会占用 Flags 字段导致解析失败）
+# Name,    Type, SubType, Offset,   Size,     Flags
+nvs,       data, nvs,     0x9000,   0x6000,
+otadata,   data, ota,     0xf000,   0x2000,
+phy_init,  data, phy,     0x11000,  0x1000,
+ota_0,     app,  ota_0,   0x20000,  0x1F0000,
+ota_1,     app,  ota_1,   0x210000, 0x1F0000,

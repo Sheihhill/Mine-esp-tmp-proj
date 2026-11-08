@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ESP32 WiFi 配网</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif;background:linear-gradient(135deg,#0f2027,#203a43,#2c5364);color:#eaf2f8;padding:16px}
+.card{width:100%;max-width:420px;background:rgba(255,255,255,.06);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.12);border-radius:20px;padding:32px 28px;box-shadow:0 20px 60px rgba(0,0,0,.45)}
+h1{font-size:22px;margin-bottom:6px}
+p.sub{font-size:13px;opacity:.7;line-height:1.6;margin-bottom:22px}
+label{display:block;font-size:13px;margin:16px 0 6px;opacity:.85}
+input{width:100%;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.08);color:#fff;font-size:15px;outline:none;transition:.2s}
+input:focus{border-color:#4fc3f7;background:rgba(255,255,255,.14)}
+input::placeholder{color:rgba(255,255,255,.35)}
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:64px}
+.pw-wrap button{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:#4fc3f7;font-size:13px;cursor:pointer;padding:6px}
+.btns{display:flex;gap:12px;margin-top:26px}
+button.action{flex:1;padding:13px 0;border-radius:12px;font-size:16px;font-weight:600;cursor:pointer;border:none;transition:.2s}
+#btn-ok{background:linear-gradient(135deg,#4fc3f7,#1976d2);color:#fff}
+#btn-ok:hover{filter:brightness(1.1)}
+#btn-ok:disabled{opacity:.5;cursor:not-allowed}
+#btn-cancel{background:rgba(255,255,255,.1);color:#eaf2f8;border:1px solid rgba(255,255,255,.2)}
+#btn-cancel:hover{background:rgba(255,255,255,.18)}
+#msg{margin-top:18px;font-size:13px;line-height:1.6;min-height:20px}
+.ok{color:#81c784}
+.err{color:#e57373}
+#cur{margin-top:14px;font-size:12px;opacity:.6}
+h2{font-size:15px;margin:24px 0 8px;padding-top:18px;border-top:1px solid rgba(255,255,255,.12)}
+.row{display:flex;justify-content:space-between;align-items:center;font-size:13px;padding:8px 0;border-bottom:1px dashed rgba(255,255,255,.08)}
+.row:last-child{border-bottom:none}
+.row span{opacity:.65}
+.row b{font-weight:600;max-width:62%;text-align:right;word-break:break-all}
+.on{color:#81c784}
+.off{color:#e57373}
+input[type=file]{padding:10px;font-size:13px}
+.file-box{margin-top:8px;font-size:12px;opacity:.75;word-break:break-all}
+.bar{height:10px;border-radius:6px;background:rgba(255,255,255,.12);overflow:hidden;margin-top:14px}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#4fc3f7,#1976d2);transition:width .2s}
+#ota-msg{margin-top:12px;font-size:13px;line-height:1.6;min-height:18px}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>ESP32 WiFi 配网</h1>
+  <p class="sub">输入要让 ESP32 连接的路由器 WiFi 名称和密码，点击「确认」保存。配置写入 NVS，断电不丢失，设备重启后自动连接。</p>
+
+  <h2>设备状态</h2>
+  <div class="row"><span>STA（连接路由器）</span><b id="st-sta">检测中…</b></div>
+  <div class="row"><span>热点 AP</span><b id="st-ap">检测中…</b></div>
+  <div class="row"><span>固件版本</span><b id="st-ver">—</b></div>
+  <div class="row"><span>已保存 WiFi</span><b id="st-saved">—</b></div>
+
+  <h2>WiFi 配网</h2>
+  <label for="ssid">WiFi 名称（SSID）</label>
+  <input id="ssid" maxlength="32" placeholder="例如：MyHomeWiFi" autocomplete="off">
+  <label for="pass">WiFi 密码</label>
+  <div class="pw-wrap">
+    <input id="pass" type="password" maxlength="63" placeholder="无密码的网络可留空">
+    <button type="button" id="btn-eye" onclick="togglePw()">显示</button>
+  </div>
+  <div class="btns">
+    <button class="action" id="btn-ok" onclick="saveWifi()">确认</button>
+    <button class="action" id="btn-cancel" onclick="cancelWifi()">取消</button>
+  </div>
+  <div id="msg"></div>
+  <div id="cur"></div>
+
+  <h2>OTA 固件升级</h2>
+  <label for="binfile">固件包（.bin 文件）</label>
+  <input type="file" id="binfile" accept=".bin" onchange="filePicked()">
+  <div class="file-box" id="file-info">未选择文件</div>
+  <div class="bar"><i id="bar"></i></div>
+  <div id="ota-msg"></div>
+  <div class="btns">
+    <button class="action" id="btn-ota" onclick="startOta()">上传并升级</button>
+  </div>
+</div>
+<script>
+function togglePw(){
+  var p=document.getElementById('pass'),b=document.getElementById('btn-eye');
+  if(p.type==='password'){p.type='text';b.textContent='隐藏';}
+  else{p.type='password';b.textContent='显示';}
+}
+function msg(text,ok){
+  var m=document.getElementById('msg');
+  m.textContent=text;m.className=ok?'ok':'err';
+}
+function cancelWifi(){
+  document.getElementById('ssid').value='';
+  document.getElementById('pass').value='';
+  msg('已取消，输入框已清空（未修改任何设置）',false);
+}
+function saveWifi(){
+  var ss=document.getElementById('ssid').value.trim();
+  var pw=document.getElementById('pass').value;
+  if(!ss){msg('请输入 WiFi 名称（SSID）',false);return;}
+  if(pw.length>0&&(pw.length<8||pw.length>63)){msg('密码需 8~63 位；开放网络请留空',false);return;}
+  var okBtn=document.getElementById('btn-ok');
+  okBtn.disabled=true;
+  msg('正在保存…',true);
+  fetch('/save',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ssid:ss,pass:pw})})
+  .then(function(r){return r.json();})
+  .then(function(j){
+    msg(j.msg,j.ok);
+    okBtn.disabled=false;
+  })
+  .catch(function(e){
+    msg('请求失败：'+e,false);
+    okBtn.disabled=false;
+  });
+}
+function fmtSize(n){
+  return n>=1048576?(n/1048576).toFixed(2)+' MB':(n/1024).toFixed(1)+' KB';
+}
+function otaMsg(text,ok){
+  var m=document.getElementById('ota-msg');
+  m.textContent=text;m.className=ok?'ok':'err';
+}
+function filePicked(){
+  var f=document.getElementById('binfile').files[0];
+  var el=document.getElementById('file-info');
+  if(!f){el.textContent='未选择文件';return;}
+  el.textContent=f.name+'（'+fmtSize(f.size)+'）';
+  otaMsg('',true);
+}
+function startOta(){
+  var f=document.getElementById('binfile').files[0];
+  if(!f){otaMsg('请先选择 .bin 固件包',false);return;}
+  if(f.size===0){otaMsg('文件为空',false);return;}
+  if(f.size>2031616){otaMsg('固件包过大（'+fmtSize(f.size)+'），超过 OTA 分区容量',false);return;}
+  var btn=document.getElementById('btn-ota');
+  var bar=document.getElementById('bar');
+  btn.disabled=true;bar.style.width='0%';
+  otaMsg('正在上传…',true);
+  var xhr=new XMLHttpRequest();
+  xhr.open('POST','/ota');
+  xhr.upload.onprogress=function(e){
+    if(e.lengthComputable){bar.style.width=(e.loaded/e.total*100).toFixed(1)+'%';}
+  };
+  xhr.onload=function(){
+    btn.disabled=false;
+    var j;try{j=JSON.parse(xhr.responseText);}catch(e){j={ok:false,msg:'响应解析失败'};}
+    if(j.ok){bar.style.width='100%';otaMsg(j.msg,true);}
+    else{otaMsg(j.msg,false);}
+  };
+  xhr.onerror=function(){btn.disabled=false;otaMsg('上传失败：网络中断',false);};
+  xhr.send(f);
+}
+window.onload=function(){
+  fetch('/status').then(function(r){return r.json();}).then(function(j){
+    var st=document.getElementById('st-sta');
+    if(j.sta_connected){st.textContent='已连接 '+j.sta_ssid+'（'+j.sta_ip+'）';st.className='on';}
+    else{st.textContent='未连接';st.className='off';}
+    document.getElementById('st-ap').textContent=j.ap_ssid+'（'+j.ap_ip+'）';
+    document.getElementById('st-ver').textContent=j.version;
+    if(j.ssid){
+      document.getElementById('st-saved').textContent=j.ssid;
+      document.getElementById('cur').textContent='当前已保存的 WiFi：'+j.ssid;
+      document.getElementById('ssid').value=j.ssid;
+    }else{
+      document.getElementById('st-saved').textContent='未保存';
+      document.getElementById('cur').textContent='尚未保存任何 WiFi 配置';
+    }
+  }).catch(function(){});
+};
+</script>
+</body>
+</html>

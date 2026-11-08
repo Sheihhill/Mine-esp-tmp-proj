@@ -1,0 +1,5 @@
+## 组件依赖清单：LVGL 图形库 + Espressif 官方移植层
+## idf.py build 时会自动下载到 managed_components/
+dependencies:
+  espressif/esp_lvgl_port: "^2.9.0"
+  lvgl/lvgl: ">=9.3,<10"     # esp_lvgl_port 2.9 需要 9.3+（用到 RGB565_SWAPPED 格式）
